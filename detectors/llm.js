@@ -4,9 +4,9 @@
  */
 
 const OLLAMA_URL   = 'http://localhost:11434/api/generate';
-const MODEL        = 'llama3.2:3b';
-const BATCH_SIZE   = 20;   // candidates per LLM call
-const TIMEOUT_MS   = 90_000; // 90s per batch
+const MODEL        = 'llama3.2:1b';
+const BATCH_SIZE   = 15;    // candidates per LLM call
+const TIMEOUT_MS   = 180_000; // 3 min per batch (covers cold model-load on first request)
 
 // Confidence thresholds
 export const CONFIDENCE = {
