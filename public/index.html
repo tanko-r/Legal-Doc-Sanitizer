@@ -28,8 +28,9 @@
       border-radius: 12px;
       box-shadow: 0 2px 16px rgba(0,0,0,0.08);
       padding: 32px;
-      width: 100%;
-      max-width: 720px;
+      width: 50vw;
+      min-width: 640px;
+      max-width: 1200px;
       margin-bottom: 24px;
     }
     .card h2 { font-size: 1rem; margin: 0 0 18px; font-weight: 600; }
@@ -120,14 +121,18 @@
     .spinner { display: inline-block; animation: spin 0.8s linear infinite; }
 
     /* Results */
-    #results-card { display: none; width: 100%; max-width: 720px; }
+    #results-card { display: none; }
     .result-item {
-      display: flex; align-items: center; gap: 12px;
-      padding: 12px 14px; border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 8px;
+      display: flex; flex-direction: column;
+      padding: 14px 16px; border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 10px;
     }
-    .result-item .result-info { flex: 1; overflow: hidden; }
-    .result-item .result-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .result-item .result-meta { font-size: 0.78rem; color: #888; margin-top: 2px; }
+    .result-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+    .result-item .result-name { font-weight: 600; font-size: 0.92rem; }
+    .result-item .result-meta { font-size: 0.78rem; color: #888; margin-bottom: 6px; }
+    .result-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0;
+    }
     .badge {
       background: #e8f5e9; color: #2e7d32; border-radius: 99px;
       padding: 3px 11px; font-size: 0.78rem; font-weight: 600; white-space: nowrap;
@@ -160,9 +165,13 @@
       font-weight: 600; color: #3f51b5; border-bottom: 1px solid #c5cae9;
     }
     .nodes-table td {
-      padding: 5px 10px; border-bottom: 1px solid #f0f0f0;
-      vertical-align: middle; max-width: 260px; word-break: break-word;
+      padding: 6px 12px; border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle; word-break: break-word;
     }
+    .nodes-table th:nth-child(1), .nodes-table td:nth-child(1) { min-width: 220px; width: 32%; }
+    .nodes-table th:nth-child(2), .nodes-table td:nth-child(2) { min-width: 220px; width: 32%; }
+    .nodes-table th:nth-child(3), .nodes-table td:nth-child(3) { min-width: 130px; width: 18%; }
+    .nodes-table th:nth-child(4), .nodes-table td:nth-child(4) { min-width: 130px; width: 18%; }
     .nodes-table tr:last-child td { border-bottom: none; }
     .nodes-table tr:hover td { background: #fafafa; }
     .orig-cell { color: #c62828; }
@@ -322,6 +331,14 @@
         <small>Comma-separated words or phrases that should never be redacted.</small>
       </div>
 
+      <div class="full-col">
+        <label>LLM Model</label>
+        <select id="model-select">
+          <option value="">Loading...</option>
+        </select>
+        <small>Local Ollama model used for low-confidence second-opinion checks.</small>
+      </div>
+
     </div>
   </details>
 
@@ -419,6 +436,24 @@
   function saveGlobalWhitelist() {
     localStorage.setItem(GLOBAL_WL_KEY, JSON.stringify([...globalWhitelist]));
   }
+
+  // ── Model selector ────────────────────────────────────────────────────────────
+  const modelSelect = document.getElementById('model-select');
+  const MODEL_KEY   = 'redaction_model_v1';
+
+  (async () => {
+    try {
+      const resp = await fetch('/api/models');
+      const { models } = await resp.json();
+      const saved = localStorage.getItem(MODEL_KEY);
+      modelSelect.innerHTML = models.length
+        ? models.map(m => `<option value="${m}"${m === saved ? ' selected' : ''}>${m}</option>`).join('')
+        : '<option value="">No models found</option>';
+    } catch {
+      modelSelect.innerHTML = '<option value="">Ollama unavailable</option>';
+    }
+    modelSelect.addEventListener('change', () => localStorage.setItem(MODEL_KEY, modelSelect.value));
+  })();
 
   // ── Progress checklist ────────────────────────────────────────────────────────
   function addStep(msg) {
@@ -588,6 +623,7 @@
     const formData = new FormData();
     selectedFiles.forEach(f => formData.append('files', f));
     formData.append('whitelist', JSON.stringify(combined));
+    if (modelSelect.value) formData.append('model', modelSelect.value);
 
     try {
       progressBar.style.width = '10%';
@@ -725,18 +761,19 @@
 
       const item = document.createElement('div');
       item.className = 'result-item';
-      item.style.flexWrap = 'wrap';
       item.innerHTML = `
-        <div class="result-info" style="min-width:0;flex:1">
+        <div class="result-header">
           <div class="result-name" title="${r.redactedName}">${r.redactedName}</div>
-          <div class="result-meta">
-            From: ${r.originalName}
-            &nbsp;&middot;&nbsp; ${r.definedTermCount} defined term${r.definedTermCount !== 1 ? 's' : ''} preserved
-          </div>
-          ${nodesHtml}
         </div>
-        <span class="${badgeClass}">${n} passage${n !== 1 ? 's' : ''} redacted</span>
-        <button class="download-btn" data-i="${i}">Download</button>
+        <div class="result-meta">
+          From: ${r.originalName}
+          &nbsp;&middot;&nbsp; ${r.definedTermCount} defined term${r.definedTermCount !== 1 ? 's' : ''} preserved
+        </div>
+        ${nodesHtml}
+        <div class="result-footer">
+          <span class="${badgeClass}">${n} passage${n !== 1 ? 's' : ''} redacted</span>
+          <button class="download-btn" data-i="${i}">Download</button>
+        </div>
       `;
       resultItems.appendChild(item);
     });

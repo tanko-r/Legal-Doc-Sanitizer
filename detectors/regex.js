@@ -194,5 +194,7 @@ export function runRegexDetectors(text) {
     }
   }
 
-  return results;
+  // Word-count cap: drop non-exempt detections longer than 10 words
+  const EXEMPT = new Set(['EMAIL', 'PHONE', 'AMOUNT', 'ADDRESS', 'ZIP', 'LEGAL_DESCRIPTION']);
+  return results.filter(d => EXEMPT.has(d.type) || d.value.trim().split(/\s+/).length <= 10);
 }

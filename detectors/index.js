@@ -129,9 +129,10 @@ function applyRedactions(text, detections, definedTerms, userWhitelist = new Set
  * @param {Set}      definedTerms — Terms extracted from quoted phrases in the doc
  * @param {Set}      userWhitelist — User-supplied terms to preserve (lowercased)
  * @param {Function} progress  — callback({ msg, pct }) for status updates
+ * @param {string|null} model — Ollama model override (null = use default)
  * @returns {Promise<{ redacted: string[], llmLog: Array, changedNodes: Array }>}
  */
-export async function redactTexts(texts, definedTerms, userWhitelist = new Set(), progress = () => {}) {
+export async function redactTexts(texts, definedTerms, userWhitelist = new Set(), progress = () => {}, model = null) {
   // Filter to segments worth sending to NER (skip blanks and very short strings)
   const NER_MIN_LENGTH = 4;
   const nerIndices = [];
@@ -158,15 +159,19 @@ export async function redactTexts(texts, definedTerms, userWhitelist = new Set()
   }
 
   // Build per-index NER map, tagging NER results with confidence + source
+  // Apply word-count cap here at the NER stage (MONEY exempt, same as AMOUNT)
+  const NER_WORDCOUNT_EXEMPT = new Set(['MONEY']);
   const nerByIndex = new Map();
   for (let j = 0; j < nerIndices.length; j++) {
-    const tagged = (nerResults[j] || []).map(d => ({
-      ...d,
-      confidence: d.type === 'PERSON' ? CONFIDENCE.NER_PERSON
-                : d.type === 'ORG'    ? CONFIDENCE.NER_ORG
-                :                       CONFIDENCE.NER_MONEY,
-      source: 'ner',
-    }));
+    const tagged = (nerResults[j] || [])
+      .filter(d => NER_WORDCOUNT_EXEMPT.has(d.type) || d.value.trim().split(/\s+/).length <= MAX_WORDS)
+      .map(d => ({
+        ...d,
+        confidence: d.type === 'PERSON' ? CONFIDENCE.NER_PERSON
+                  : d.type === 'ORG'    ? CONFIDENCE.NER_ORG
+                  :                       CONFIDENCE.NER_MONEY,
+        source: 'ner',
+      }));
     nerByIndex.set(nerIndices[j], tagged);
   }
 
@@ -212,7 +217,7 @@ export async function redactTexts(texts, definedTerms, userWhitelist = new Set()
     const { approved, llmLog: log } = await llmFilter(llmCandidates, (batchNum, batchTotal, approved, rejected) => {
       const pct = 60 + Math.round((batchNum / batchTotal) * 30);
       progress({ msg: `LLM batch ${batchNum}/${batchTotal} complete — ${approved} approved, ${rejected} rejected`, pct });
-    });
+    }, model);
     llmLog = log;
     llmCandidates.forEach((c, idx) => {
       if (!approved.has(idx)) {

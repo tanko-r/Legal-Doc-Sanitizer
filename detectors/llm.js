@@ -36,7 +36,7 @@ export const LLM_THRESHOLD = 0.78;
  * Run one batch of up to BATCH_SIZE candidates through the LLM.
  * Returns { approved: Set<number>, prompt, response } relative to the batch slice.
  */
-async function runBatch(batch) {
+async function runBatch(batch, model) {
   const lines = batch.map((c, i) => {
     const ctx = c.context.length > 120
       ? '...' + c.context.slice(-120)
@@ -55,7 +55,7 @@ async function runBatch(batch) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL, prompt, stream: false,
+      model: model || MODEL, prompt, stream: false,
       options: { temperature: 0, num_predict: batch.length * 6 },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -87,7 +87,7 @@ async function runBatch(batch) {
  *   approved — global indices (into candidates) that the LLM approved for redaction
  *   llmLog   — [{prompt, response, items:[{value,type,verdict}]}] one entry per batch
  */
-export async function llmFilter(candidates, onBatch = () => {}) {
+export async function llmFilter(candidates, onBatch = () => {}, model = null) {
   const approved = new Set();
   const llmLog   = [];
 
@@ -99,7 +99,7 @@ export async function llmFilter(candidates, onBatch = () => {}) {
     const batch = candidates.slice(offset, offset + BATCH_SIZE);
     const batchNum = Math.floor(offset / BATCH_SIZE) + 1;
     try {
-      const { approved: batchApproved, prompt, response } = await runBatch(batch);
+      const { approved: batchApproved, prompt, response } = await runBatch(batch, model);
 
       const items = batch.map((c, i) => ({
         value:   c.detection.value,

@@ -53,7 +53,7 @@ function rebuildXml(xml, nodes, redactedTexts) {
   return out + xml.slice(pos);
 }
 
-async function redactDocx(buffer, userWhitelist = new Set(), progress = () => {}) {
+async function redactDocx(buffer, userWhitelist = new Set(), progress = () => {}, model = null) {
   const zip = await JSZip.loadAsync(buffer);
 
   // Collect all text part XMLs
@@ -74,7 +74,7 @@ async function redactDocx(buffer, userWhitelist = new Set(), progress = () => {}
   progress({ msg: `Extracted ${definedTerms.size} defined term(s) to preserve`, pct: 18 });
 
   // Step 2: Redact all text nodes
-  const { redacted, llmLog, changedNodes } = await redactTexts(allTexts, definedTerms, userWhitelist, progress);
+  const { redacted, llmLog, changedNodes } = await redactTexts(allTexts, definedTerms, userWhitelist, progress, model);
 
   // Step 3: Rebuild each XML part and write back into the zip
   progress({ msg: 'Rebuilding document...', pct: 93 });
@@ -100,6 +100,17 @@ async function redactDocx(buffer, userWhitelist = new Set(), progress = () => {}
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// Return available Ollama models for the GUI model selector
+app.get('/api/models', async (req, res) => {
+  try {
+    const resp = await fetch('http://localhost:11434/api/tags');
+    const data = await resp.json();
+    res.json({ models: (data.models || []).map(m => m.name) });
+  } catch {
+    res.json({ models: [] });
+  }
+});
+
 app.post('/redact', upload.array('files'), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'No files uploaded' });
@@ -114,6 +125,8 @@ app.post('/redact', upload.array('files'), async (req, res) => {
       if (Array.isArray(parsed)) userWhitelist = new Set(parsed.map(s => s.toLowerCase()));
     }
   } catch { /* ignore malformed whitelist */ }
+
+  const selectedModel = (req.body && req.body.model) || null;
 
   // Stream NDJSON progress updates + final result
   res.setHeader('Content-Type', 'application/x-ndjson');
@@ -130,7 +143,7 @@ app.post('/redact', upload.array('files'), async (req, res) => {
       const progress = ({ msg, pct }) => send({ type: 'progress', msg: `${fileLabel}: ${msg}`, pct });
 
       const { buffer, redactedNodeCount, definedTermCount, changedNodes, llmLog } =
-        await redactDocx(file.buffer, userWhitelist, progress);
+        await redactDocx(file.buffer, userWhitelist, progress, selectedModel);
 
       send({ type: 'progress', msg: `${fileLabel}: done — ${redactedNodeCount} passage(s) redacted`, pct: 97 });
 
