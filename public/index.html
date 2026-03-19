@@ -591,7 +591,6 @@
 
     try {
       progressBar.style.width = '10%';
-      progressLabel.textContent = 'Uploading...';
       const resp = await fetch('/redact', { method: 'POST', body: formData });
       if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Server error'); }
 
