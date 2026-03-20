@@ -160,6 +160,7 @@ app.post('/redact', upload.array('files'), async (req, res) => {
 
     send({ type: 'result', results });
   } catch (err) {
+    // eslint-disable-next-line no-console
     console.error(err);
     send({ type: 'error', error: err.message });
   }
@@ -168,4 +169,5 @@ app.post('/redact', upload.array('files'), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3737;
+// eslint-disable-next-line no-console
 app.listen(PORT, () => console.log(`Redaction tool running at http://localhost:${PORT}`));
