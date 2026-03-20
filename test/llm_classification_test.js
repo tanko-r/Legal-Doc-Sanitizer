@@ -33,7 +33,7 @@ const TEST_BATCHES = [
     items: [
       { type: 'ORG',    value: 'Indemnified Party',        context: 'The Indemnified Party shall be held harmless from all claims.' },
       { type: 'ORG',    value: 'Borrower',                 context: 'Borrower agrees to repay the loan pursuant to the terms herein.' },
-      { type: 'ORG',    value: 'ASB Capital Management LLC', context: 'Lender is ASB Capital Management LLC, a Delaware company.' },
+      { type: 'ORG',    value: 'Pima Capital Management LLC', context: 'Lender is Pima Capital Management LLC, a Delaware company.' },
       { type: 'ORG',    value: 'King County',              context: 'Property is located in King County, Washington.' },
       { type: 'PERSON', value: 'Waiver Party',             context: 'Waiver Party acknowledges that no waiver shall be implied.' },
     ],
@@ -44,7 +44,7 @@ const TEST_BATCHES = [
     items: [
       { type: 'ORG',    value: 'Material Casualty',        context: 'In the event of a Material Casualty, Seller may terminate.' },
       { type: 'ORG',    value: 'Material Taking',          context: 'A Material Taking means condemnation of more than 20%.' },
-      { type: 'ORG',    value: 'Puget Sound Energy',       context: 'Utilities are provided by Puget Sound Energy.' },
+      { type: 'ORG',    value: 'Puget Sound Electric',       context: 'Utilities are provided by Puget Sound Electric.' },
       { type: 'ORG',    value: 'Arbitration Panel',        context: 'Disputes shall be resolved before an Arbitration Panel.' },
       { type: 'PERSON', value: 'Robert T. Williams III',   context: 'Guarantor: Robert T. Williams III, an individual.' },
     ],
@@ -56,7 +56,7 @@ const TEST_BATCHES = [
       { type: 'ORG',    value: 'Seattle Housing Authority', context: 'Property is managed by Seattle Housing Authority.' },
       { type: 'ORG',    value: 'Permitted Exceptions',      context: 'Title shall be subject only to the Permitted Exceptions.' },
       { type: 'PERSON', value: 'the Trustee',               context: 'All funds are held by the Trustee pending closing.' },
-      { type: 'ORG',    value: 'Cascade Investment Group',  context: 'Seller is Cascade Investment Group, a Washington partnership.' },
+      { type: 'ORG',    value: 'Cascade Innovation Group',  context: 'Seller is Cascade Innovation Group, a Washington partnership.' },
       { type: 'ORG',    value: 'Force Majeure Event',       context: 'A Force Majeure Event excuses performance under Section 14.' },
     ],
     expected: ['Y', 'N', 'N', 'Y', 'N'],
