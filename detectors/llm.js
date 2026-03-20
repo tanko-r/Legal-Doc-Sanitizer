@@ -15,13 +15,13 @@ export const CONFIDENCE = {
   LEGAL_DESCRIPTION:0.95,
   AMOUNT_SIGN:      0.95,  // $ sign
   ADDRESS:          0.90,
-  ALLCAPS_ENTITY:   0.90,
+  ALLCAPS_ENTITY:   0.75,
   DATE_LONG:        0.90,
   DATE_ISO:         0.88,
   DATE_ORDINAL:     0.87,
   DATE_SHORT:       0.82,
   AMOUNT_WORD:      0.80,
-  ZIP:              0.90,
+  ZIP:              0.95,
   MIXED_ENTITY_LONG:0.72,  // mixed-case entity >= 30 chars
   MIXED_ENTITY_MED: 0.60,  // mixed-case entity 15–29 chars
   NER_PERSON:       0.60,
@@ -54,6 +54,7 @@ function buildContext(context, value) {
 }
 
 async function runBatch(batch, model) {
+  const effectiveModel = model || MODEL;
   const lines = batch.map((c, i) => {
     const ctx = buildContext(c.context, c.detection.value);
     return `${i + 1}. [${c.detection.type}] "${c.detection.value}" in: "${ctx}"`;
@@ -103,7 +104,6 @@ async function runBatch(batch, model) {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
-  if (!resp.ok) throw new Error(`Ollama HTTP ${resp.status}`);
   const data = await resp.json();
   const raw  = (data.response || '').trim();
 
@@ -147,9 +147,13 @@ export async function llmFilter(candidates, onBatch = () => {}, model = null) {
   const approved = new Set();
   const llmLog   = [];
 
-  if (!candidates.length) return { approved, llmLog };
+  if (!candidates.length) {
+    console.log('[LLM] No candidates to filter, skipping LLM phase');
+    return { approved, llmLog };
+  }
 
   const totalBatches = Math.ceil(candidates.length / BATCH_SIZE);
+  console.log(`[LLM] Starting LLM filter: ${candidates.length} candidates in ${totalBatches} batch(es), model=${model || MODEL + ' (default)'}`);
 
   for (let offset = 0; offset < candidates.length; offset += BATCH_SIZE) {
     const batch = candidates.slice(offset, offset + BATCH_SIZE);
@@ -166,11 +170,11 @@ export async function llmFilter(candidates, onBatch = () => {}, model = null) {
       llmLog.push({ prompt, response, items });
 
       batchApproved.forEach(i => approved.add(offset + i));
+      console.log(`[LLM] Batch ${batchNum}/${totalBatches} complete: ${batchApproved.size} approved, ${batch.length - batchApproved.size} rejected`);
       onBatch(batchNum, totalBatches, batchApproved.size, batch.length - batchApproved.size);
 
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`LLM batch ${offset}–${offset + batch.length - 1} failed:`, err.message);
+      console.error(`[LLM] Batch ${batchNum}/${totalBatches} FAILED: ${err.message}`);
       // Fail open for this batch — mark all as approved
       batch.forEach((_, i) => approved.add(offset + i));
       llmLog.push({ prompt: '(failed)', response: err.message, items: [] });
@@ -178,5 +182,6 @@ export async function llmFilter(candidates, onBatch = () => {}, model = null) {
     }
   }
 
+  console.log(`[LLM] Filter complete: ${approved.size}/${candidates.length} candidates approved for redaction`);
   return { approved, llmLog };
 }
