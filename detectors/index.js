@@ -7,6 +7,9 @@ import { llmFilter, CONFIDENCE, LLM_THRESHOLD } from './llm.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const NER_SCRIPT = path.join(__dirname, 'ner.py');
 
+// Feature flag: set to true to re-enable the Python NER/NLP subprocess
+const NER_ENABLED = false;
+
 // ─── Persistent NER subprocess ────────────────────────────────────────────────
 
 let nerProc = null;
@@ -345,7 +348,7 @@ async function runLLMPhase(texts, allMerged, llmCandidates, definedTerms, userWh
   progress({ msg: `LLM reviewing ${uniqueCandidates.length} unique value(s) (${llmCandidates.length} total candidate(s)) in ${totalBatches} batch(es)...`, pct: 60 });
   const { approved: approvedUnique, llmLog } = await llmFilter(uniqueCandidates, (batchNum, batchTotal, approved, rejected) => {
     const pct = 60 + Math.round((batchNum / batchTotal) * 30);
-    progress({ msg: `LLM batch ${batchNum}/${batchTotal} complete — ${approved} approved, ${rejected} rejected`, pct });
+    progress({ msg: `LLM batch ${batchNum}/${batchTotal} complete — ${approved} redacted, ${rejected} preserved`, pct });
   }, model);
 
   // Mark rejected candidates across all detections sharing the same value
@@ -397,11 +400,16 @@ export async function redactTexts(texts, definedTerms, userWhitelist = new Set()
 
   progress({ msg: `Running regex detectors on ${texts.length} node(s)...`, pct: 20 });
 
-  // Run NER on qualifying texts
-  progress({ msg: `Running NLP analysis on ${nerTexts.length} qualifying node(s)...`, pct: 30 });
-  const nerResults = await fetchNerResults(nerTexts);
+  // Run NER on qualifying texts (when enabled)
+  let nerByIndex;
+  if (NER_ENABLED) {
+    progress({ msg: `Running NLP analysis on ${nerTexts.length} qualifying node(s)...`, pct: 30 });
+    const nerResults = await fetchNerResults(nerTexts);
+    nerByIndex = buildNerByIndex(nerIndices, nerResults);
+  } else {
+    nerByIndex = new Map();
+  }
 
-  const nerByIndex = buildNerByIndex(nerIndices, nerResults);
   const { allMerged, regexTotal, nerTotal, filteredTotal } = buildMergedDetections(texts, nerByIndex);
   progress({ msg: `Regex: ${regexTotal} hit(s) · NLP: ${nerTotal} hit(s) · ${filteredTotal} candidate(s) after word-count filter`, pct: 55 });
 
@@ -420,4 +428,4 @@ export async function redactTexts(texts, definedTerms, userWhitelist = new Set()
 }
 
 // Start NER process eagerly on import so it's warm by the time requests arrive
-startNER();
+if (NER_ENABLED) startNER();

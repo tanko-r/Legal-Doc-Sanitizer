@@ -106,19 +106,29 @@ async function runBatch(batch, model) {
   }
   const format = { type: 'object', properties, required };
 
-  const resp = await fetch(OLLAMA_URL, {
+  const effectiveUrl = OLLAMA_URL;
+  const payload = {
+    model: effectiveModel, prompt, stream: false,
+    format,
+    options: { temperature: 0, num_predict: batch.length * 12 },
+  };
+  console.log(`[LLM] Requesting ${effectiveUrl} model=${effectiveModel} batch_size=${batch.length} timeout=${TIMEOUT_MS}ms`);
+
+  const resp = await fetch(effectiveUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: model || MODEL, prompt, stream: false,
-      format,
-      options: { temperature: 0, num_predict: batch.length * 12 },
-    }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '(unreadable)');
+    throw new Error(`Ollama HTTP ${resp.status}: ${body.slice(0, 200)}`);
+  }
+
   const data = await resp.json();
   const raw  = (data.response || '').trim();
+  console.log(`[LLM] Response received: ${raw.length} chars`);
 
   // Parse object response: { "1": "Y", "2": "N", ... }
   let verdicts;
@@ -188,6 +198,7 @@ export async function llmFilter(candidates, onBatch = () => {}, model = null) {
 
     } catch (err) {
       console.error(`[LLM] Batch ${batchNum}/${totalBatches} FAILED: ${err.message}`);
+      if (err.cause) console.error(`[LLM]   cause: ${err.cause.message || err.cause}`);
       // Fail open for this batch — mark all as approved
       batch.forEach((_, i) => approved.add(offset + i));
       llmLog.push({ prompt: '(failed)', response: err.message, items: [] });

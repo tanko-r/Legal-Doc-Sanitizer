@@ -201,6 +201,7 @@ app.post('/redact', upload.array('files'), async (req, res) => {
   res.end();
 });
 
-const PORT = process.env.PORT || 3737;
+const portArgIndex = process.argv.indexOf('--port');
+const PORT = (portArgIndex !== -1 && process.argv[portArgIndex + 1]) || process.env.PORT || 3737;
 // eslint-disable-next-line no-console
 app.listen(PORT, () => console.log(`Redaction tool running at http://localhost:${PORT}`));
