@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Redaction Tool</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      color: #1a1a2e;
+    }
+
+    header { text-align: center; margin-bottom: 36px; }
+    header h1 { font-size: 1.8rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.5px; }
+    header p { color: #555; margin: 0; font-size: 0.95rem; }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+      padding: 32px;
+      width: 50vw;
+      min-width: 640px;
+      max-width: 1200px;
+      margin-bottom: 24px;
+    }
+    .card h2 { font-size: 1rem; margin: 0 0 18px; font-weight: 600; }
+
+    /* Drop zone */
+    #dropzone {
+      border: 2px dashed #c5cae9;
+      border-radius: 10px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    #dropzone.drag-over { border-color: #3f51b5; background: #e8eaf6; }
+    #dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    #dropzone .icon { font-size: 2.4rem; margin-bottom: 10px; }
+    #dropzone p { margin: 4px 0; color: #555; font-size: 0.93rem; }
+    #dropzone strong { color: #3f51b5; }
+
+    /* File list */
+    #file-list { margin-top: 20px; display: none; }
+    #file-list h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: #999; margin: 0 0 8px; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; background: #f7f8fc; border-radius: 6px; margin-bottom: 6px; font-size: 0.88rem;
+    }
+    .file-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-item .fsize { color: #999; font-size: 0.8rem; flex-shrink: 0; }
+    .file-item .remove-btn {
+      background: none; border: none; color: #bbb; cursor: pointer;
+      font-size: 1.1rem; line-height: 1; padding: 0 2px; flex-shrink: 0;
+    }
+    .file-item .remove-btn:hover { color: #e53935; }
+
+    /* Settings panel */
+    details.settings { margin-top: 22px; }
+    details.settings summary {
+      cursor: pointer; font-size: 0.88rem; color: #3f51b5; font-weight: 600;
+      list-style: none; user-select: none;
+    }
+    details.settings summary::before { content: '\25B6  '; font-size: 0.7rem; }
+    details.settings[open] summary::before { content: '\25BC  '; }
+    .settings-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px;
+      margin-top: 16px; padding: 18px; background: #f7f8fc; border-radius: 8px;
+    }
+    .settings-grid label { font-size: 0.83rem; font-weight: 600; color: #444; display: block; margin-bottom: 5px; }
+    .settings-grid input[type=range] { width: 100%; accent-color: #3f51b5; }
+    .settings-grid select, .settings-grid input[type=text] {
+      width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 0.87rem; background: #fff;
+    }
+    .range-row { display: flex; align-items: center; gap: 8px; }
+    .range-row span { font-size: 0.82rem; color: #3f51b5; font-weight: 700; min-width: 28px; text-align: right; }
+    .full-col { grid-column: 1 / -1; }
+    .settings-grid small { display: block; margin-top: 4px; color: #999; font-size: 0.77rem; }
+    .check-group { display: flex; gap: 14px; flex-wrap: wrap; }
+    .check-group label { font-weight: normal; display: flex; align-items: center; gap: 5px; font-size: 0.85rem; }
+
+    /* Actions */
+    .actions { margin-top: 24px; display: flex; gap: 12px; align-items: center; }
+    button.primary {
+      background: #3f51b5; color: #fff; border: none; border-radius: 8px;
+      padding: 12px 28px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s;
+    }
+    button.primary:hover:not(:disabled) { background: #303f9f; }
+    button.primary:disabled { background: #9fa8da; cursor: not-allowed; }
+    button.secondary {
+      background: none; border: 1px solid #ccc; border-radius: 8px;
+      padding: 11px 20px; font-size: 0.95rem; cursor: pointer; color: #555; transition: border-color 0.2s;
+    }
+    button.secondary:hover { border-color: #3f51b5; color: #3f51b5; }
+
+    /* Progress */
+    #progress-section { display: none; margin-top: 20px; }
+    .progress-bar-wrap { background: #e8eaf6; border-radius: 99px; height: 6px; overflow: hidden; margin-bottom: 10px; }
+    .progress-bar { height: 100%; background: #3f51b5; border-radius: 99px; width: 0%; transition: width 0.5s; }
+    #progress-steps { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
+    #progress-steps li {
+      display: flex; align-items: baseline; gap: 7px;
+      padding: 3px 0; color: #888; transition: color 0.2s;
+    }
+    #progress-steps li.done  { color: #2e7d32; }
+    #progress-steps li.active { color: #1a1a2e; font-weight: 500; }
+    #progress-steps li .step-icon { flex-shrink: 0; width: 14px; text-align: center; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; animation: spin 0.8s linear infinite; }
+
+    /* Results */
+    #results-card { display: none; }
+    .result-item {
+      display: flex; flex-direction: column;
+      padding: 14px 16px; border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 10px;
+    }
+    .result-header { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .reprocess-check { width: 16px; height: 16px; accent-color: #3f51b5; cursor: pointer; display: none; }
+    .reprocess-check.visible { display: inline-block; }
+    .result-item .result-name { font-weight: 600; font-size: 0.92rem; }
+    .result-item .result-meta { font-size: 0.78rem; color: #888; margin-bottom: 6px; }
+    .result-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0;
+    }
+    .badge {
+      background: #e8f5e9; color: #2e7d32; border-radius: 99px;
+      padding: 3px 11px; font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+    }
+    .badge.none { background: #f5f5f5; color: #888; }
+    .badge.warn { background: #fff8e1; color: #f57f17; }
+    button.download-btn {
+      background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 7px;
+      padding: 7px 16px; color: #2e7d32; font-weight: 600; font-size: 0.83rem;
+      cursor: pointer; white-space: nowrap; transition: background 0.15s; flex-shrink: 0;
+    }
+    button.download-btn:hover { background: #c8e6c9; }
+    .download-all-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
+
+    /* Redacted nodes list */
+    .nodes-toggle {
+      display: inline-block; margin-top: 5px;
+      font-size: 0.78rem; color: #3f51b5; cursor: pointer; user-select: none;
+    }
+    .nodes-list {
+      display: none; margin-top: 8px;
+      border: 1px solid #e8eaf6; border-radius: 6px; overflow: hidden;
+    }
+    .nodes-list.open { display: block; }
+    .nodes-table {
+      width: 100%; border-collapse: collapse; font-size: 0.78rem;
+    }
+    .nodes-table th {
+      background: #e8eaf6; padding: 6px 10px; text-align: left;
+      font-weight: 600; color: #3f51b5; border-bottom: 1px solid #c5cae9;
+    }
+    .nodes-table td {
+      padding: 6px 12px; border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle; word-break: break-word;
+    }
+    .nodes-table th:nth-child(1), .nodes-table td:nth-child(1) { min-width: 220px; width: 32%; }
+    .nodes-table th:nth-child(2), .nodes-table td:nth-child(2) { min-width: 220px; width: 32%; }
+    .nodes-table th:nth-child(3), .nodes-table td:nth-child(3) { min-width: 130px; width: 18%; }
+    .nodes-table th:nth-child(4), .nodes-table td:nth-child(4) { min-width: 130px; width: 18%; }
+    .nodes-table tr:last-child td { border-bottom: none; }
+    .nodes-table tr:hover td { background: #fafafa; }
+    .orig-cell { color: #c62828; }
+    .red-cell  { color: #2e7d32; font-weight: 600; }
+    .nodes-scroll { max-height: 320px; overflow-y: auto; }
+
+    /* Source / confidence badges */
+    .src-badge {
+      display: inline-block; border-radius: 4px; padding: 1px 6px;
+      font-size: 0.68rem; font-weight: 700; white-space: nowrap; letter-spacing: 0.2px;
+    }
+    .src-regex  { background: #e3f2fd; color: #1565c0; }
+    .src-ner    { background: #f3e5f5; color: #6a1b9a; }
+    .src-llm-y  { background: #fff8e1; color: #e65100; }
+    .src-allcaps    { background: #e8f5e9; color: #2e7d32; }
+    .src-mixed      { background: #e0f7fa; color: #006064; }
+    .src-propagated { background: #fce4ec; color: #880e4f; }
+    .conf-dot   { font-size: 0.65rem; color: #aaa; margin-left: 3px; }
+
+    /* LLM trace panel */
+    .llm-trace-toggle {
+      display: inline-block; margin-top: 14px;
+      font-size: 0.8rem; color: #e65100; cursor: pointer; user-select: none;
+    }
+    .llm-trace-body {
+      display: none; margin-top: 8px; border: 1px solid #ffe0b2;
+      border-radius: 6px; overflow: hidden; font-size: 0.75rem;
+    }
+    .llm-trace-body.open { display: block; }
+    .llm-batch {
+      border-bottom: 1px solid #ffe0b2; padding: 10px 14px;
+    }
+    .llm-batch:last-child { border-bottom: none; }
+    .llm-batch h4 { margin: 0 0 6px; font-size: 0.75rem; color: #e65100; }
+    .llm-prompt, .llm-response {
+      background: #fffde7; border-radius: 4px; padding: 7px 10px;
+      white-space: pre-wrap; word-break: break-word; margin-bottom: 6px;
+      font-family: monospace; font-size: 0.72rem; color: #333; max-height: 200px; overflow-y: auto;
+    }
+    .llm-response { background: #f1f8e9; }
+    .llm-verdict-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .llm-verdict {
+      border-radius: 4px; padding: 2px 8px; font-size: 0.7rem; font-weight: 700;
+    }
+    .llm-verdict.Y { background: #ffebee; color: #c62828; }
+    .llm-verdict.N { background: #e8f5e9; color: #2e7d32; text-decoration: line-through; color: #aaa; }
+
+    /* Whitelist action buttons on node rows */
+    .wl-btn {
+      background: none; border: 1px solid #ddd; border-radius: 5px;
+      padding: 2px 6px; font-size: 0.72rem; cursor: pointer; white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s; color: #666; line-height: 1.4;
+    }
+    .wl-btn:hover { border-color: #9fa8da; color: #3f51b5; background: #eef0fb; }
+    .wl-btn.kept { background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; cursor: default; }
+    .wl-btn.starred { background: #fff8e1; border-color: #ffe082; color: #f57f17; }
+    .wl-btn.starred:hover { background: #fff3cd; border-color: #ffd54f; }
+    .wl-actions { display: flex; gap: 5px; flex-shrink: 0; }
+
+    /* Re-process bar */
+    #reprocess-bar {
+      display: none; margin-top: 16px;
+      background: #e8eaf6; border-radius: 8px; padding: 12px 16px;
+      display: none; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    #reprocess-bar.visible { display: flex; }
+    #reprocess-bar p {
+      margin: 0; flex: 1; font-size: 0.85rem; color: #3f51b5; min-width: 160px;
+    }
+    #reprocess-bar .session-tags {
+      display: flex; gap: 6px; flex-wrap: wrap; flex: 2; min-width: 0;
+    }
+    .session-tag {
+      background: #fff; border: 1px solid #9fa8da; border-radius: 99px;
+      padding: 2px 10px; font-size: 0.78rem; color: #3f51b5; display: flex; align-items: center; gap: 5px;
+    }
+    .session-tag button {
+      background: none; border: none; cursor: pointer; color: #9fa8da;
+      font-size: 0.85rem; padding: 0; line-height: 1;
+    }
+    .session-tag button:hover { color: #c62828; }
+
+    /* Global whitelist panel */
+    #global-wl-panel {
+      margin-top: 16px; border-top: 1px solid #eee; padding-top: 14px; display: none;
+    }
+    #global-wl-panel.has-terms { display: block; }
+    #global-wl-toggle {
+      font-size: 0.82rem; color: #888; cursor: pointer; user-select: none;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #global-wl-toggle::before { content: '\25B6'; font-size: 0.65rem; }
+    #global-wl-toggle.open::before { content: '\25BC'; }
+    #global-wl-body { display: none; margin-top: 10px; }
+    #global-wl-body.open { display: block; }
+    .global-tags {
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .global-tag {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: 99px;
+      padding: 2px 10px 2px 12px; font-size: 0.8rem; color: #795548;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .global-tag button {
+      background: none; border: none; cursor: pointer; color: #bbb; font-size: 0.85rem; padding: 0; line-height: 1;
+    }
+    .global-tag button:hover { color: #c62828; }
+    #global-wl-note { font-size: 0.75rem; color: #aaa; margin-top: 8px; }
+
+    .error-msg {
+      background: #ffebee; border: 1px solid #ef9a9a; border-radius: 8px;
+      padding: 12px 16px; color: #c62828; font-size: 0.9rem; margin-top: 16px;
+    }
+
+    /* Model setup panel */
+    #model-card .model-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; background: #f7f8fc; border-radius: 8px; margin-bottom: 8px;
+    }
+    #model-card .model-row .model-name { font-weight: 600; font-size: 0.9rem; flex: 1; }
+    #model-card .model-row .model-status { font-size: 0.8rem; color: #888; }
+    #model-card .model-row .model-status.ready { color: #2e7d32; }
+    #model-card .model-row .model-status.error { color: #c62828; }
+    #model-card .model-row button {
+      padding: 6px 14px; border-radius: 6px; border: 1px solid #3f51b5;
+      background: #fff; color: #3f51b5; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    }
+    #model-card .model-row button:hover { background: #e8eaf6; }
+    #model-card .model-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .model-progress { width: 100%; height: 4px; background: #e8eaf6; border-radius: 2px; margin-top: 6px; overflow: hidden; display: none; }
+    .model-progress.active { display: block; }
+    .model-progress-bar { height: 100%; background: #3f51b5; border-radius: 2px; width: 0%; transition: width 0.3s; }
+    .model-note { font-size: 0.75rem; color: #999; margin-top: 4px; }
+
+    /* LLM backend selector */
+    .llm-backend-group { margin-top: 12px; padding: 12px 14px; background: #f7f8fc; border-radius: 8px; }
+    .llm-backend-group label { font-size: 0.83rem; font-weight: 600; color: #444; display: block; margin-bottom: 8px; }
+    .llm-backend-options { display: flex; gap: 12px; flex-wrap: wrap; }
+    .llm-backend-options label { font-weight: normal; display: flex; align-items: center; gap: 5px; font-size: 0.85rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Document Redaction Tool</h1>
+  <p>Upload .docx files to automatically detect and redact PII &mdash; runs entirely in your browser</p>
+</header>
+
+<!-- Model setup card -->
+<div class="card" id="model-card">
+  <h2>AI Models</h2>
+
+  <div class="model-row" id="ner-row">
+    <div>
+      <div class="model-name">NER Model (entity detection)</div>
+      <div class="model-note">~170 MB download, cached after first load</div>
+    </div>
+    <span class="model-status" id="ner-status">Not loaded</span>
+    <button id="ner-load-btn">Load Model</button>
+  </div>
+  <div class="model-progress" id="ner-progress"><div class="model-progress-bar" id="ner-progress-bar"></div></div>
+
+  <div class="llm-backend-group">
+    <label>LLM Backend (optional &mdash; improves accuracy for ambiguous entities)</label>
+    <div class="llm-backend-options">
+      <label><input type="radio" name="llm-backend" value="none" checked> None</label>
+      <label><input type="radio" name="llm-backend" value="webllm"> In-Browser (WebGPU)</label>
+      <label><input type="radio" name="llm-backend" value="ollama"> Ollama (localhost)</label>
+    </div>
+  </div>
+
+  <div class="model-row" id="llm-row" style="display:none; margin-top:8px;">
+    <div>
+      <div class="model-name" id="llm-model-name">WebLLM: Qwen2.5-1.5B</div>
+      <div class="model-note" id="llm-model-note">~800 MB download, requires WebGPU</div>
+    </div>
+    <span class="model-status" id="llm-status">Not loaded</span>
+    <button id="llm-load-btn">Load Model</button>
+  </div>
+  <div class="model-progress" id="llm-progress"><div class="model-progress-bar" id="llm-progress-bar"></div></div>
+
+  <div id="ollama-config" style="display:none; margin-top:8px;">
+    <div class="model-row">
+      <div>
+        <div class="model-name">Ollama</div>
+        <div class="model-note">Connects to Ollama running on localhost:11434</div>
+      </div>
+      <span class="model-status" id="ollama-status">Checking...</span>
+      <select id="ollama-model-select" style="width:auto;padding:5px 8px;border-radius:6px;border:1px solid #ddd;font-size:0.82rem;">
+        <option value="">Checking...</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div id="dropzone">
+    <input type="file" id="file-input" accept=".docx" multiple>
+    <div class="icon">&#128196;</div>
+    <p><strong>Click to select</strong> or drag &amp; drop files here</p>
+    <p style="font-size:0.8rem;color:#bbb;">Accepts .docx files &mdash; batch upload supported</p>
+  </div>
+
+  <div id="file-list">
+    <h3>Selected Files</h3>
+    <div id="file-items"></div>
+  </div>
+
+  <!-- Settings -->
+  <details class="settings" id="settings-panel">
+    <summary>What gets redacted</summary>
+    <div class="settings-grid">
+      <div class="full-col">
+        <label>Detection Categories</label>
+        <div class="check-group">
+          <label><input type="checkbox" id="chk-names" checked> People &amp; Entities (NLP)</label>
+          <label><input type="checkbox" id="chk-amounts" checked> Dollar Amounts</label>
+          <label><input type="checkbox" id="chk-contact" checked> Addresses / Phone / Email</label>
+          <label><input type="checkbox" id="chk-dates" checked> Dates</label>
+          <label><input type="checkbox" id="chk-legal" checked> Legal Descriptions &amp; Parcel Nos.</label>
+        </div>
+        <small style="margin-top:6px;display:block;">
+          Defined terms found in quotes in each document (e.g. "Seller", "Agreement") are automatically preserved.
+        </small>
+      </div>
+
+      <div class="full-col">
+        <label>Additional Terms to Preserve</label>
+        <input type="text" id="whitelist-input" placeholder="e.g. King County, Washington, Escrow Agent">
+        <small>Comma-separated words or phrases that should never be redacted.</small>
+      </div>
+    </div>
+  </details>
+
+  <div class="actions">
+    <button class="primary" id="redact-btn" disabled>Redact Documents</button>
+    <button class="secondary" id="clear-btn">Clear</button>
+  </div>
+
+  <div id="progress-section">
+    <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+    <ul id="progress-steps"></ul>
+  </div>
+
+  <div id="error-box"></div>
+</div>
+
+<div class="card" id="results-card">
+  <h2>Redacted Files</h2>
+  <div id="result-items"></div>
+
+  <div id="reprocess-bar">
+    <p>&#128683; Kept this session:</p>
+    <div class="session-tags" id="session-tags"></div>
+    <button class="primary" id="reprocess-btn" style="padding:9px 18px;font-size:0.88rem;">Re-process</button>
+  </div>
+
+  <div id="global-wl-panel">
+    <div id="global-wl-toggle">Globally preserved terms (<span id="global-wl-count">0</span>)</div>
+    <div id="global-wl-body">
+      <div class="global-tags" id="global-tags"></div>
+      <div id="global-wl-note">Saved in this browser. Starred items are always excluded from redaction.</div>
+    </div>
+  </div>
+
+  <div class="download-all-wrap" id="download-all-wrap" style="display:none">
+    <button class="primary" id="download-all-btn">Download All</button>
+  </div>
+</div>
+
+<script type="module">
+  import { redactDocx } from './js/engine.js';
+  import { loadNER, isNERLoaded } from './js/ner.js';
+  import { loadWebLLM, checkOllama, setBackend, isLLMReady, getLLMBackend } from './js/llm.js';
+
+  // ── Elements ──────────────────────────────────────────────────────────────
+  const fileInput        = document.getElementById('file-input');
+  const dropzone         = document.getElementById('dropzone');
+  const fileList         = document.getElementById('file-list');
+  const fileItems        = document.getElementById('file-items');
+  const redactBtn        = document.getElementById('redact-btn');
+  const clearBtn         = document.getElementById('clear-btn');
+  const progressSection  = document.getElementById('progress-section');
+  const progressBar      = document.getElementById('progress-bar');
+  const progressSteps    = document.getElementById('progress-steps');
+  const errorBox         = document.getElementById('error-box');
+  const resultsCard      = document.getElementById('results-card');
+  const resultItems      = document.getElementById('result-items');
+  const downloadAllWrap  = document.getElementById('download-all-wrap');
+  const downloadAllBtn   = document.getElementById('download-all-btn');
+  const reprocessBar     = document.getElementById('reprocess-bar');
+  const reprocessBtn     = document.getElementById('reprocess-btn');
+  const sessionTagsEl    = document.getElementById('session-tags');
+  const globalWlPanel    = document.getElementById('global-wl-panel');
+  const globalWlToggle   = document.getElementById('global-wl-toggle');
+  const globalWlBody     = document.getElementById('global-wl-body');
+  const globalTagsEl     = document.getElementById('global-tags');
+  const globalWlCount    = document.getElementById('global-wl-count');
+
+  // Model controls
+  const nerLoadBtn       = document.getElementById('ner-load-btn');
+  const nerStatus        = document.getElementById('ner-status');
+  const nerProgress      = document.getElementById('ner-progress');
+  const nerProgressBar   = document.getElementById('ner-progress-bar');
+  const llmRow           = document.getElementById('llm-row');
+  const llmLoadBtn       = document.getElementById('llm-load-btn');
+  const llmStatus        = document.getElementById('llm-status');
+  const llmModelName     = document.getElementById('llm-model-name');
+  const llmModelNote     = document.getElementById('llm-model-note');
+  const llmProgress      = document.getElementById('llm-progress');
+  const llmProgressBar   = document.getElementById('llm-progress-bar');
+  const ollamaConfig     = document.getElementById('ollama-config');
+  const ollamaStatus     = document.getElementById('ollama-status');
+  const ollamaModelSelect= document.getElementById('ollama-model-select');
+  const backendRadios    = document.querySelectorAll('input[name="llm-backend"]');
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let selectedFiles    = [];
+  let redactedResults  = [];
+  let sessionWhitelist = new Set();
+  let globalWhitelist  = new Set();
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+    return (b/(1024*1024)).toFixed(1) + ' MB';
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function downloadBlob(data, filename) {
+    const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // ── Whitelist persistence (localStorage) ──────────────────────────────────
+  const WL_KEY = 'redaction_global_whitelist';
+  function saveGlobalWhitelist() {
+    localStorage.setItem(WL_KEY, JSON.stringify([...globalWhitelist]));
+  }
+  function loadGlobalWhitelist() {
+    try {
+      const raw = localStorage.getItem(WL_KEY);
+      if (raw) globalWhitelist = new Set(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }
+  loadGlobalWhitelist();
+
+  // ── Model setup ───────────────────────────────────────────────────────────
+  nerLoadBtn.addEventListener('click', async () => {
+    nerLoadBtn.disabled = true;
+    nerStatus.textContent = 'Loading...';
+    nerStatus.className = 'model-status';
+    nerProgress.classList.add('active');
+
+    try {
+      await loadNER((progress) => {
+        if (progress.status === 'progress' && progress.total) {
+          const pct = Math.round((progress.loaded / progress.total) * 100);
+          nerProgressBar.style.width = pct + '%';
+          nerStatus.textContent = `Downloading... ${pct}%`;
+        } else if (progress.status === 'ready') {
+          nerStatus.textContent = 'Ready';
+        }
+      });
+      nerStatus.textContent = 'Ready';
+      nerStatus.className = 'model-status ready';
+      nerLoadBtn.textContent = 'Loaded';
+      nerProgress.classList.remove('active');
+    } catch (err) {
+      nerStatus.textContent = 'Error: ' + err.message;
+      nerStatus.className = 'model-status error';
+      nerLoadBtn.disabled = false;
+      nerProgress.classList.remove('active');
+    }
+  });
+
+  // LLM backend selection
+  backendRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const val = radio.value;
+      llmRow.style.display = val === 'webllm' ? 'flex' : 'none';
+      ollamaConfig.style.display = val === 'ollama' ? 'block' : 'none';
+      if (val === 'none') setBackend(null);
+      if (val === 'ollama') initOllama();
+    });
+  });
+
+  llmLoadBtn.addEventListener('click', async () => {
+    llmLoadBtn.disabled = true;
+    llmStatus.textContent = 'Loading...';
+    llmStatus.className = 'model-status';
+    llmProgress.classList.add('active');
+
+    try {
+      await loadWebLLM((progress) => {
+        if (progress.text) llmStatus.textContent = progress.text;
+        if (progress.progress != null) {
+          const pct = Math.round(progress.progress * 100);
+          llmProgressBar.style.width = pct + '%';
+        }
+      });
+      llmStatus.textContent = 'Ready';
+      llmStatus.className = 'model-status ready';
+      llmLoadBtn.textContent = 'Loaded';
+      llmProgress.classList.remove('active');
+    } catch (err) {
+      llmStatus.textContent = 'Error: ' + err.message;
+      llmStatus.className = 'model-status error';
+      llmLoadBtn.disabled = false;
+      llmProgress.classList.remove('active');
+    }
+  });
+
+  async function initOllama() {
+    ollamaStatus.textContent = 'Checking...';
+    const { available, models } = await checkOllama();
+    if (available && models.length) {
+      ollamaStatus.textContent = 'Connected';
+      ollamaStatus.className = 'model-status ready';
+      ollamaModelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      setBackend('ollama');
+    } else {
+      ollamaStatus.textContent = available ? 'No models found' : 'Not reachable';
+      ollamaStatus.className = 'model-status error';
+      ollamaModelSelect.innerHTML = '<option value="">N/A</option>';
+    }
+  }
+
+  // ── Progress checklist ────────────────────────────────────────────────────
+  function addStep(msg) {
+    const prev = progressSteps.querySelector('li.active');
+    if (prev) {
+      prev.classList.replace('active', 'done');
+      prev.querySelector('.step-icon').textContent = '\u2713';
+    }
+    const li = document.createElement('li');
+    li.className = 'active';
+    li.innerHTML = `<span class="step-icon"><span class="spinner">\u27F3</span></span><span>${escHtml(msg)}</span>`;
+    progressSteps.appendChild(li);
+    progressSteps.scrollTop = progressSteps.scrollHeight;
+  }
+
+  function completeAllSteps() {
+    progressSteps.querySelectorAll('li.active').forEach(li => {
+      li.classList.replace('active', 'done');
+      li.querySelector('.step-icon').textContent = '\u2713';
+    });
+  }
+  function resetSteps() { progressSteps.innerHTML = ''; }
+
+  // ── File management ───────────────────────────────────────────────────────
+  function renderFileList() {
+    fileItems.innerHTML = '';
+    if (!selectedFiles.length) { fileList.style.display = 'none'; redactBtn.disabled = true; return; }
+    fileList.style.display = 'block';
+    redactBtn.disabled = false;
+    selectedFiles.forEach((f, i) => {
+      const el = document.createElement('div');
+      el.className = 'file-item';
+      el.innerHTML = `<span class="fname" title="${f.name}">${f.name}</span>
+        <span class="fsize">${formatBytes(f.size)}</span>
+        <button class="remove-btn" data-i="${i}">&times;</button>`;
+      fileItems.appendChild(el);
+    });
+  }
+
+  fileItems.addEventListener('click', e => {
+    if (e.target.classList.contains('remove-btn')) {
+      selectedFiles.splice(+e.target.dataset.i, 1);
+      renderFileList();
+    }
+  });
+
+  function addFiles(list) {
+    for (const f of list) {
+      if (f.name.toLowerCase().endsWith('.docx') && !selectedFiles.find(x => x.name === f.name))
+        selectedFiles.push(f);
+    }
+    renderFileList();
+  }
+
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag-over'); addFiles(e.dataTransfer.files); });
+
+  clearBtn.addEventListener('click', () => {
+    selectedFiles = [];
+    renderFileList();
+    errorBox.innerHTML = '';
+    resultsCard.style.display = 'none';
+    sessionWhitelist.clear();
+    renderReprocessBar();
+  });
+
+  // ── Session whitelist UI ──────────────────────────────────────────────────
+  function renderReprocessBar() {
+    const checks = resultItems.querySelectorAll('.reprocess-check');
+    if (!sessionWhitelist.size) {
+      reprocessBar.classList.remove('visible');
+      checks.forEach(cb => cb.classList.remove('visible'));
+      return;
+    }
+    reprocessBar.classList.add('visible');
+    checks.forEach(cb => cb.classList.add('visible'));
+    updateReprocessLabel();
+    sessionTagsEl.innerHTML = '';
+    for (const term of [...sessionWhitelist].sort()) {
+      const tag = document.createElement('span');
+      tag.className = 'session-tag';
+      tag.innerHTML = `${escHtml(term)} <button data-term="${escHtml(term)}" title="Remove">&times;</button>`;
+      sessionTagsEl.appendChild(tag);
+    }
+  }
+
+  function updateReprocessLabel() {
+    const checks = resultItems.querySelectorAll('.reprocess-check');
+    if (!checks.length) return;
+    const checked = resultItems.querySelectorAll('.reprocess-check:checked').length;
+    reprocessBtn.textContent = checked === checks.length
+      ? 'Re-process all'
+      : `Re-process ${checked} of ${checks.length}`;
+    reprocessBtn.disabled = checked === 0;
+  }
+
+  sessionTagsEl.addEventListener('click', e => {
+    if (e.target.tagName === 'BUTTON') {
+      sessionWhitelist.delete(e.target.dataset.term);
+      renderReprocessBar();
+      refreshNodeRowButtons();
+    }
+  });
+
+  resultItems.addEventListener('change', e => {
+    if (e.target.classList.contains('reprocess-check')) updateReprocessLabel();
+  });
+
+  // ── Global whitelist UI ───────────────────────────────────────────────────
+  function renderGlobalPanel() {
+    if (!globalWhitelist.size) {
+      globalWlPanel.classList.remove('has-terms');
+      return;
+    }
+    globalWlPanel.classList.add('has-terms');
+    globalWlCount.textContent = globalWhitelist.size;
+    globalTagsEl.innerHTML = '';
+    for (const term of [...globalWhitelist].sort()) {
+      const tag = document.createElement('span');
+      tag.className = 'global-tag';
+      tag.innerHTML = `&#9733; ${escHtml(term)} <button data-term="${escHtml(term)}" title="Remove">&times;</button>`;
+      globalTagsEl.appendChild(tag);
+    }
+  }
+
+  globalTagsEl.addEventListener('click', e => {
+    if (e.target.tagName === 'BUTTON') {
+      globalWhitelist.delete(e.target.dataset.term);
+      saveGlobalWhitelist();
+      renderGlobalPanel();
+      refreshNodeRowButtons();
+    }
+  });
+
+  globalWlToggle.addEventListener('click', () => {
+    globalWlToggle.classList.toggle('open');
+    globalWlBody.classList.toggle('open');
+  });
+
+  function refreshNodeRowButtons() {
+    document.querySelectorAll('.wl-btn[data-keep]').forEach(btn => {
+      const term = btn.dataset.keep;
+      const inSession = sessionWhitelist.has(term);
+      btn.classList.toggle('kept', inSession);
+      btn.textContent = inSession ? '\u2713 Kept' : 'Keep';
+      btn.disabled = inSession;
+    });
+    document.querySelectorAll('.wl-btn[data-star]').forEach(btn => {
+      const term = btn.dataset.star;
+      const starred = globalWhitelist.has(term);
+      btn.classList.toggle('starred', starred);
+      btn.title = starred ? 'Remove from global whitelist' : 'Save to global whitelist';
+      btn.textContent = starred ? '\u2605 Global' : '\u2606 Global';
+    });
+  }
+
+  // ── Submit / redact ───────────────────────────────────────────────────────
+  async function runRedaction() {
+    if (!selectedFiles.length) return;
+
+    let filesToSend = selectedFiles;
+    let reprocessIndices = null;
+    if (redactedResults.length) {
+      const checks = resultItems.querySelectorAll('.reprocess-check');
+      if (checks.length) {
+        reprocessIndices = [];
+        checks.forEach(cb => { if (cb.checked) reprocessIndices.push(+cb.dataset.i); });
+        if (reprocessIndices.length === 0) return;
+        filesToSend = reprocessIndices.map(i => selectedFiles[i]);
+      }
+    }
+
+    errorBox.innerHTML = '';
+    redactBtn.disabled = true;
+    clearBtn.disabled = true;
+    if (reprocessBtn) reprocessBtn.disabled = true;
+    progressSection.style.display = 'block';
+    progressBar.style.width = '5%';
+    resetSteps();
+    addStep(`Processing ${filesToSend.length} file(s) locally...`);
+
+    const manualTerms = document.getElementById('whitelist-input').value
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const combined = new Set([
+      ...manualTerms,
+      ...[...sessionWhitelist].map(s => s.toLowerCase()),
+      ...[...globalWhitelist].map(s => s.toLowerCase()),
+    ]);
+
+    const ollamaModel = getLLMBackend() === 'ollama' ? ollamaModelSelect.value : null;
+
+    try {
+      const results = [];
+      for (let fi = 0; fi < filesToSend.length; fi++) {
+        const file = filesToSend[fi];
+        const fileLabel = filesToSend.length > 1 ? `[${fi + 1}/${filesToSend.length}] ${file.name}` : file.name;
+        addStep(`Processing ${fileLabel}`);
+        progressBar.style.width = '10%';
+
+        const arrayBuffer = await file.arrayBuffer();
+        const progress = ({ msg, pct }) => {
+          addStep(`${fileLabel}: ${msg}`);
+          if (pct != null) progressBar.style.width = pct + '%';
+        };
+
+        const { buffer, redactedNodeCount, definedTermCount, changedNodes, llmLog } =
+          await redactDocx(arrayBuffer, combined, progress, ollamaModel);
+
+        addStep(`${fileLabel}: done \u2014 ${redactedNodeCount} passage(s) redacted`);
+
+        results.push({
+          originalName: file.name,
+          redactedName: file.name.replace(/\.docx$/i, '_REDACTED.docx'),
+          buffer,
+          redactedNodeCount,
+          definedTermCount,
+          changedNodes: changedNodes.slice(0, 500),
+          llmLog,
+        });
+      }
+
+      progressBar.style.width = '100%';
+      completeAllSteps();
+
+      if (reprocessIndices) {
+        results.forEach((r, ni) => { redactedResults[reprocessIndices[ni]] = r; });
+      } else {
+        redactedResults = results;
+      }
+      renderResults(redactedResults);
+    } catch (err) {
+      errorBox.innerHTML = `<div class="error-msg">Error: ${escHtml(err.message)}</div>`;
+    } finally {
+      redactBtn.disabled = false;
+      clearBtn.disabled = false;
+      if (reprocessBtn) reprocessBtn.disabled = false;
+      progressBar.style.width = '100%';
+    }
+  }
+
+  redactBtn.addEventListener('click', runRedaction);
+  reprocessBtn.addEventListener('click', runRedaction);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function sourceBadge(det) {
+    if (!det) return '';
+    const conf = det.confidence != null ? `<span class="conf-dot">${Math.round(det.confidence * 100)}%</span>` : '';
+    if (det.llmVerdict === 'Y')       return `<span class="src-badge src-llm-y">LLM</span>${conf}`;
+    if (det.source === 'propagated')  return `<span class="src-badge src-propagated">Propagated</span>${conf}`;
+    if (det.source === 'ner')         return `<span class="src-badge src-ner">NLP</span>${conf}`;
+    if (det.source === 'suffix')      return `<span class="src-badge src-allcaps">Suffix</span>${conf}`;
+    return `<span class="src-badge src-regex">Regex</span>${conf}`;
+  }
+
+  function llmTraceHtml(llmLog, fileIdx) {
+    if (!llmLog || !llmLog.length) return '';
+    const batches = llmLog.map((b, bi) => {
+      const verdictPills = (b.items || []).map(it =>
+        `<span class="llm-verdict ${it.verdict}" title="${escHtml(it.type)}">${escHtml(it.value)}</span>`
+      ).join('');
+      return `<div class="llm-batch">
+        <h4>Batch ${bi + 1} &mdash; ${b.items?.length ?? 0} items</h4>
+        <div><strong>Prompt:</strong></div>
+        <div class="llm-prompt">${escHtml(b.prompt)}</div>
+        <div><strong>Response:</strong></div>
+        <div class="llm-response">${escHtml(b.response)}</div>
+        <div class="llm-verdict-row">${verdictPills}</div>
+      </div>`;
+    }).join('');
+    return `
+      <span class="llm-trace-toggle" data-fi="${fileIdx}">&#9654; Show LLM trace (${llmLog.length} batch${llmLog.length !== 1 ? 'es' : ''})</span>
+      <div class="llm-trace-body" id="llm-trace-${fileIdx}">${batches}</div>`;
+  }
+
+  // ── Render results ────────────────────────────────────────────────────────
+  function renderResults(results) {
+    resultItems.innerHTML = '';
+    results.forEach((r, i) => {
+      const n = r.redactedNodeCount;
+      const badgeClass = n === 0 ? 'badge none' : 'badge';
+
+      const nodesHtml = r.changedNodes?.length ? (() => {
+        const rows = r.changedNodes.map(c => {
+          const dets = c.detections || [];
+          const detRows = dets.map((d, di) => {
+            const key = d.value.toLowerCase();
+            const inSession = sessionWhitelist.has(key);
+            const inGlobal  = globalWhitelist.has(key);
+            const firstCells = di === 0 ? `
+              <td class="orig-cell" rowspan="${dets.length || 1}">${escHtml(c.original)}</td>
+              <td class="red-cell"  rowspan="${dets.length || 1}">${escHtml(c.redacted)}</td>` : '';
+            return `<tr>
+              ${firstCells}
+              <td>${sourceBadge(d)} <span style="font-size:0.75rem;color:#555">${escHtml(d.value)}</span></td>
+              <td style="white-space:nowrap;">
+                <div class="wl-actions">
+                  <button class="wl-btn${inSession ? ' kept' : ''}" data-keep="${escHtml(key)}"
+                    ${inSession ? 'disabled' : ''}>${inSession ? '\u2713 Kept' : 'Keep'}</button>
+                  <button class="wl-btn${inGlobal ? ' starred' : ''}" data-star="${escHtml(key)}"
+                    title="${inGlobal ? 'Remove from global whitelist' : 'Save to global whitelist'}"
+                    >${inGlobal ? '\u2605 Global' : '\u2606 Global'}</button>
+                </div>
+              </td>
+            </tr>`;
+          });
+          if (!detRows.length) {
+            return `<tr>
+              <td class="orig-cell">${escHtml(c.original)}</td>
+              <td class="red-cell">${escHtml(c.redacted)}</td>
+              <td></td><td></td>
+            </tr>`;
+          }
+          return detRows.join('');
+        }).join('');
+
+        return `
+          <span class="nodes-toggle" data-i="${i}">\u25BC Show ${r.changedNodes.length} redacted passages</span>
+          <div class="nodes-list" id="nodes-${i}">
+            <div class="nodes-scroll">
+              <table class="nodes-table">
+                <thead><tr><th>Original</th><th>Redacted</th><th>Source</th><th></th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>
+          ${llmTraceHtml(r.llmLog, i)}`;
+      })() : '';
+
+      const item = document.createElement('div');
+      item.className = 'result-item';
+      item.innerHTML = `
+        <div class="result-header">
+          <input type="checkbox" class="reprocess-check" data-i="${i}" checked>
+          <div class="result-name" title="${r.redactedName}">${r.redactedName}</div>
+        </div>
+        <div class="result-meta">
+          From: ${r.originalName}
+          &nbsp;\u00B7&nbsp; ${r.definedTermCount} defined term${r.definedTermCount !== 1 ? 's' : ''} preserved
+        </div>
+        ${nodesHtml}
+        <div class="result-footer">
+          <span class="${badgeClass}">${n} passage${n !== 1 ? 's' : ''} redacted</span>
+          <button class="download-btn" data-i="${i}">Download</button>
+        </div>
+      `;
+      resultItems.appendChild(item);
+    });
+
+    resultItems.querySelectorAll('.nodes-toggle').forEach(t => {
+      t.addEventListener('click', () => {
+        const list = document.getElementById('nodes-' + t.dataset.i);
+        list.classList.toggle('open');
+        t.innerHTML = list.classList.contains('open')
+          ? t.innerHTML.replace('\u25BC', '\u25B2')
+          : t.innerHTML.replace('\u25B2', '\u25BC');
+      });
+    });
+
+    resultItems.querySelectorAll('.llm-trace-toggle').forEach(t => {
+      t.addEventListener('click', () => {
+        const body = document.getElementById('llm-trace-' + t.dataset.fi);
+        body.classList.toggle('open');
+        t.innerHTML = body.classList.contains('open')
+          ? t.innerHTML.replace('\u25B6', '\u25BC')
+          : t.innerHTML.replace('\u25BC', '\u25B6');
+      });
+    });
+
+    resultItems.querySelectorAll('.download-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = redactedResults[+btn.dataset.i];
+        downloadBlob(r.buffer, r.redactedName);
+      });
+    });
+
+    resultItems.querySelectorAll('.wl-btn[data-keep]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const term = btn.dataset.keep;
+        sessionWhitelist.add(term);
+        refreshNodeRowButtons();
+        renderReprocessBar();
+      });
+    });
+
+    resultItems.querySelectorAll('.wl-btn[data-star]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const term = btn.dataset.star;
+        if (globalWhitelist.has(term)) {
+          globalWhitelist.delete(term);
+        } else {
+          globalWhitelist.add(term);
+          sessionWhitelist.add(term);
+        }
+        saveGlobalWhitelist();
+        renderGlobalPanel();
+        refreshNodeRowButtons();
+        renderReprocessBar();
+      });
+    });
+
+    renderReprocessBar();
+    renderGlobalPanel();
+    downloadAllWrap.style.display = results.length > 1 ? 'flex' : 'none';
+    resultsCard.style.display = 'block';
+    resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  downloadAllBtn.addEventListener('click', () => {
+    redactedResults.forEach((r, i) => setTimeout(() => downloadBlob(r.buffer, r.redactedName), i * 100));
+  });
+
+  renderGlobalPanel();
+</script>
+</body>
+</html>
