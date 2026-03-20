@@ -111,22 +111,28 @@ app.get('/api/models', async (req, res) => {
   }
 });
 
+function parseWhitelist(body) {
+  try {
+    const raw = body && body.whitelist;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed.map(s => s.toLowerCase()));
+    }
+  } catch { /* ignore malformed whitelist */ }
+  return new Set();
+}
+
+function parseModel(body) {
+  return (body && body.model) || null;
+}
+
 app.post('/redact', upload.array('files'), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'No files uploaded' });
   }
 
-  // Parse user whitelist from form field (JSON array of lowercase strings)
-  let userWhitelist = new Set();
-  try {
-    const raw = req.body && req.body.whitelist;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) userWhitelist = new Set(parsed.map(s => s.toLowerCase()));
-    }
-  } catch { /* ignore malformed whitelist */ }
-
-  const selectedModel = (req.body && req.body.model) || null;
+  const userWhitelist = parseWhitelist(req.body);
+  const selectedModel = parseModel(req.body);
 
   // Stream NDJSON progress updates + final result
   res.setHeader('Content-Type', 'application/x-ndjson');
