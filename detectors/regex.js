@@ -50,6 +50,36 @@ const SUFFIX_RE = new RegExp(
   'gi'
 );
 
+// Read one whitespace-delimited token scanning backwards from `pos`.
+// Returns { token, tokenStart, newPos } or null if pos < 0.
+function readTokenBackward(text, pos) {
+  while (pos >= 0 && /[\s,]/.test(text[pos])) pos--;
+  if (pos < 0) return null;
+  const tokenEnd = pos + 1;
+  while (pos >= 0 && !/[\s,]/.test(text[pos])) pos--;
+  return { token: text.slice(pos + 1, tokenEnd), tokenStart: pos + 1, newPos: pos };
+}
+
+// Scan backwards from `pos`, collecting capitalized name tokens.
+// Returns { entityStart, nameWordCount } where entityStart falls back to `fallback`.
+function scanBackForName(text, pos, fallback) {
+  let entityStart = fallback;
+  let nameWordCount = 0;
+  let t;
+
+  while ((t = readTokenBackward(text, pos)) !== null) {
+    pos = t.newPos;
+    const isNameWord = /^[A-Z][A-Za-z0-9'.&-]*$/.test(t.token) || /^[0-9]+$/.test(t.token);
+    const isConnector = /^(&amp;|&)$/.test(t.token) && nameWordCount > 0;
+
+    if (isNameWord) { entityStart = t.tokenStart; nameWordCount++; }
+    else if (isConnector) { entityStart = t.tokenStart; }
+    else break;
+  }
+
+  return { entityStart, nameWordCount };
+}
+
 function findEntitiesBySuffix(text) {
   const results = [];
   const re = new RegExp(SUFFIX_RE.source, 'gi');
@@ -59,53 +89,20 @@ function findEntitiesBySuffix(text) {
     // Include a trailing period if the suffix doesn't already end with one (e.g. "Inc.")
     let suffixEnd = sm.index + sm[0].length;
     if (text[suffixEnd] === '.') suffixEnd++;
-    // Start scanning backwards from the character before the match
-    // (the optional leading comma/space is part of sm[0] but not the name)
-    let pos = sm.index - 1;
 
-    // Skip any whitespace or comma immediately before the suffix word
+    // Skip whitespace/comma immediately before the suffix word, then scan back
+    let pos = sm.index - 1;
     while (pos >= 0 && /[\s,]/.test(text[pos])) pos--;
 
-    let entityStart   = sm.index;
-    let nameWordCount = 0;
-
-    while (pos >= 0) {
-      // Skip whitespace/commas between tokens
-      while (pos >= 0 && /[\s,]/.test(text[pos])) pos--;
-      if (pos < 0) break;
-
-      // Scan back to the start of this token
-      const tokenEnd = pos + 1;
-      while (pos >= 0 && !/[\s,]/.test(text[pos])) pos--;
-      const tokenStart = pos + 1;
-      const token = text.slice(tokenStart, tokenEnd);
-
-      // Accept: capitalized word (ALL CAPS or Title Case), number
-      const isNameWord = /^[A-Z][A-Za-z0-9'.&-]*$/.test(token) || /^[0-9]+$/.test(token);
-      // Accept: XML-encoded or bare ampersand as connector (but only between name words)
-      const isConnector = /^(&amp;|&)$/.test(token) && nameWordCount > 0;
-
-      if (isNameWord) {
-        entityStart = tokenStart;
-        nameWordCount++;
-      } else if (isConnector) {
-        entityStart = tokenStart;
-      } else {
-        break;
-      }
-    }
-
+    const { entityStart, nameWordCount } = scanBackForName(text, pos, sm.index);
     if (nameWordCount === 0) continue;
 
     // Slice original text to preserve spacing/punctuation exactly
     let value = text.slice(entityStart, suffixEnd).trim();
-
     // Strip any orphaned connector at the front or back
     value = value.replace(/^(?:&amp;|&)\s*/i, '').replace(/\s*(?:&amp;|&)$/i, '').trim();
-
     if (value.length < 3) continue;
 
-    // Find the true start after possible leading-connector trim
     const trueStart = text.indexOf(value, entityStart);
     results.push({
       type:  'ORGANIZATION',
@@ -116,7 +113,6 @@ function findEntitiesBySuffix(text) {
   }
 
   // Remove results that are fully contained within a longer result
-  // (e.g. "ASB BLAKE STREET HOLDINGS" inside "ASB BLAKE STREET HOLDINGS LLC")
   return results.filter(r =>
     !results.some(other => other !== r && other.start <= r.start && other.end >= r.end)
   );
