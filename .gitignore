@@ -2,3 +2,4 @@ node_modules/
 Test-Docs/
 *.log
 .env
+autoresearch-results.tsv
