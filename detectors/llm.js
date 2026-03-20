@@ -4,9 +4,9 @@
  */
 
 const OLLAMA_URL   = 'http://localhost:11434/api/generate';
-const MODEL        = 'llama3.2:2b';
+const MODEL        = 'qwen2.5:1.5b-instruct';
 const BATCH_SIZE   = 15;    // candidates per LLM call
-const TIMEOUT_MS   = 180_000; // 3 min per batch (covers cold model-load on first request)
+const TIMEOUT_MS   = 60_000;  // 1 min — structured output is much faster (no prose drift)
 
 // Confidence thresholds
 export const CONFIDENCE = {
@@ -36,73 +36,94 @@ export const LLM_THRESHOLD = 0.78;
  * Run one batch of up to BATCH_SIZE candidates through the LLM.
  * Returns { approved: Set<number>, prompt, response } relative to the batch slice.
  */
+// Context window: show up to CTX_CHARS on each side of the detected value.
+// This gives the model symmetric context rather than just the tail of the string.
+const CTX_CHARS = 80;
+
+function buildContext(context, value) {
+  const idx = context.indexOf(value);
+  if (idx === -1) {
+    // Fallback: just trim to tail
+    return context.length > CTX_CHARS * 2
+      ? '...' + context.slice(-(CTX_CHARS * 2))
+      : context;
+  }
+  const lo  = Math.max(0, idx - CTX_CHARS);
+  const hi  = Math.min(context.length, idx + value.length + CTX_CHARS);
+  return (lo > 0 ? '...' : '') + context.slice(lo, hi) + (hi < context.length ? '...' : '');
+}
+
 async function runBatch(batch, model) {
   const effectiveModel = model || MODEL;
   const lines = batch.map((c, i) => {
-    const ctx = c.context.length > 120
-      ? '...' + c.context.slice(-120)
-      : c.context;
-    return `${i + 1}. [${c.detection.type}] "${c.detection.value}" — "${ctx}"`;
+    const ctx = buildContext(c.context, c.detection.value);
+    return `${i + 1}. [${c.detection.type}] "${c.detection.value}" in: "${ctx}"`;
   });
 
+  // Prompt design rationale:
+  //   Y criteria: named specific person or named specific organization — the key word
+  //     is "specific named", not "private". Public utilities and government bodies
+  //     that are actual parties (Puget Sound Energy, Seattle Housing Authority) are Y.
+  //   N criteria: enumerated with examples matching known false-positive patterns:
+  //     generic roles (Buyer/Seller/Trustee), legal concepts (Material Casualty),
+  //     jurisdictions (King County), and generic noun phrases (Title Company).
+  //   No format instruction needed — output is grammar-constrained via Ollama format schema.
   const prompt =
-    `You are reviewing a legal document for redaction.\n` +
-    `For each item below, reply Y if it likely identifies a specific private person, company, or party that should be redacted.\n` +
-    `Reply N if it is most likely not a private person, company or party.\n` +
-    `Reply with ONLY a JSON array of "Y" or "N" in the same order matching exactly the number of items below, NOTHING ELSE.\n` +
-    lines.join('\n') + '\n\nReply:';
+    `You are a redaction classifier for legal real-estate documents.\n` +
+    `For each detected entity, decide whether it should be redacted.\n\n` +
+    `Redact (Y) if it is:\n` +
+    `- A specific named person (e.g. "John D. Smith", "Maria Gonzalez")\n` +
+    `- A specific named organization or company (e.g. "Pacific Realty LLC", "Puget Sound Energy")\n\n` +
+    `Keep (N) if it is:\n` +
+    `- A generic role or placeholder (e.g. Buyer, Seller, Trustee, Borrower, Indemnified Party)\n` +
+    `- A legal concept or defined term (e.g. Material Casualty, Force Majeure Event, Effective Date)\n` +
+    `- A jurisdiction, county, or state (e.g. King County, Washington State)\n` +
+    `- A generic descriptive phrase (e.g. Title Company, Closing Agent, Arbitration Panel)\n\n` +
+    lines.join('\n');
 
-  // Allow enough tokens for preamble + JSON array; each verdict ~4 tokens + overhead
-  const numPredict = Math.max(batch.length * 10, 80);
-
-  console.log(`[LLM] Sending batch of ${batch.length} items to model "${effectiveModel}" (num_predict=${numPredict})`);
-
-  let resp;
-  try {
-    resp = await fetch(OLLAMA_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: effectiveModel, prompt, stream: false,
-        options: { temperature: 0, num_predict: numPredict },
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (err) {
-    console.error(`[LLM] Network/timeout error connecting to Ollama:`, err.message);
-    throw err;
+  // Grammar-constrained output: use an object schema with required numbered keys.
+  // An array schema allows [] as valid output (empty = no items); an object with
+  // required keys forces the model to emit exactly one verdict per item.
+  const properties = {};
+  const required   = [];
+  for (let i = 0; i < batch.length; i++) {
+    const k = String(i + 1);
+    properties[k] = { type: 'string', enum: ['Y', 'N'] };
+    required.push(k);
   }
+  const format = { type: 'object', properties, required };
 
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    console.error(`[LLM] Ollama HTTP ${resp.status}: ${body.slice(0, 200)}`);
-    throw new Error(`Ollama HTTP ${resp.status}: ${body.slice(0, 200)}`);
-  }
+  const resp = await fetch(OLLAMA_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: model || MODEL, prompt, stream: false,
+      format,
+      options: { temperature: 0, num_predict: batch.length * 12 },
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
 
   const data = await resp.json();
   const raw  = (data.response || '').trim();
 
-  console.log(`[LLM] Raw response (${raw.length} chars): ${raw.slice(0, 300)}`);
-
-  // Extract first JSON array from the response
-  const match = raw.match(/\[[\s\S]*?\]/);
-  if (!match) {
-    console.error(`[LLM] No JSON array found in response. Full response: ${raw}`);
-    throw new Error(`No JSON array in LLM response: ${raw.slice(0, 200)}`);
-  }
-
+  // Parse object response: { "1": "Y", "2": "N", ... }
   let verdicts;
   try {
-    verdicts = JSON.parse(match[0]);
-  } catch (parseErr) {
-    console.error(`[LLM] JSON parse failed on: ${match[0]}`);
-    throw new Error(`Invalid JSON from LLM: ${match[0].slice(0, 200)}`);
-  }
-
-  console.log(`[LLM] Verdicts: ${JSON.stringify(verdicts)}`);
-
-  if (verdicts.length !== batch.length) {
-    console.warn(`[LLM] Expected ${batch.length} verdicts but got ${verdicts.length}`);
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      verdicts = batch.map((_, i) => obj[String(i + 1)] ?? 'Y');
+    } else if (Array.isArray(obj)) {
+      verdicts = obj; // graceful fallback if model outputs array anyway
+    } else {
+      throw new Error('unexpected shape');
+    }
+  } catch {
+    // Last-resort: scan for any Y/N tokens in order
+    const tokens = raw.match(/\b[YN]\b/gi);
+    if (!tokens || tokens.length < batch.length)
+      throw new Error(`Unparseable LLM response: ${raw.slice(0, 120)}`);
+    verdicts = tokens.slice(0, batch.length);
   }
 
   const approved = new Set();
