@@ -43,6 +43,7 @@ The GUI shows the source of each detection (Regex / NLP / Llama), the confidence
   ollama pull llama3.2:3b
   ```
   Ollama must be running (`ollama serve`) before starting the server. If it is unavailable, the tool falls back to redacting all low-confidence detections without LLM review.
+  Can install other local models as well and select from the GUI.
 
 ## Quickstart
 
