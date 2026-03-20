@@ -261,6 +261,18 @@ function buildHighConfMap(allMerged) {
   return map;
 }
 
+// Return true if a value is worth sending to the LLM (not obviously garbage).
+// Filters out: pure lowercase fragments, single tokens with no capital, very short strings.
+function isLLMWorthy(value) {
+  const v = value.trim();
+  if (v.length < 3) return false;
+  // Must contain at least one capital letter (names, orgs always do)
+  if (!/[A-Z]/.test(v)) return false;
+  // Drop values that start mid-word (lowercase first char after trimming)
+  if (/^[a-z]/.test(v)) return false;
+  return true;
+}
+
 // Collect low-confidence candidates that haven't been excluded by terms/whitelist.
 function collectLLMCandidates(texts, allMerged, definedTerms, userWhitelist) {
   const candidates = [];
@@ -268,7 +280,8 @@ function collectLLMCandidates(texts, allMerged, definedTerms, userWhitelist) {
     detections.forEach((d, di) => {
       if ((d.confidence ?? 1) < LLM_THRESHOLD &&
           !definedTerms.has(normalizeTerm(d.value)) &&
-          !userWhitelist.has(d.value.toLowerCase())) {
+          !userWhitelist.has(d.value.toLowerCase()) &&
+          isLLMWorthy(d.value)) {
         candidates.push({ textIndex: ti, detectionIndex: di, detection: d, context: texts[ti] });
       }
     });
